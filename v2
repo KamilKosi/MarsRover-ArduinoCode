@@ -1,0 +1,122 @@
+/*
+IMPORTANT!               digital pin2 and digital pin3 on Arduino UNO are reserved for RC receiver data gathering! 
+IMPORTANT!               connect RC receiver's channel 1 signal wire to digital pin 2 and RC receiver's channel 2 signal wire to digital pin 3 (for more info look into PDF manual).
+IMPORTANT!               Servo data wires can be connected to any digital pins (except digital pin 2 and digital pin 3, which are used for data reading).
+SERVO CONNECTIONS!       Servo connections should be specified below (SERVO_1PIN 9 means -> servo number 1 is connected to digital pin 9. You can change it below!).
+SERVO TRIMING!           SERVO_1TRIM 0 means -> There is no correction for servo motor number 1, correction can be positive or negative and you can change it below!
+
+Code has been written by Kamil Kosi
+ */
+
+#define SERVO_1PIN 9
+#define SERVO_2PIN 10
+#define SERVO_3PIN 11
+#define SERVO_4PIN 12
+#define SERVO_5PIN 13
+#define SERVO_6PIN 14
+
+#define KFILTER_P1 0.2
+#define KFILTER_P2 0.2
+#define KFILTER_P3 0.01
+
+#define SERVO_1TRIM 0
+#define SERVO_2TRIM 0
+#define SERVO_3TRIM 0
+#define SERVO_4TRIM 0
+#define SERVO_5TRIM 0
+#define SERVO_6TRIM 0
+
+#define MAXCH1_VALUE 1840
+#define MINCH1_VALUE 1160
+
+#include <Servo.h>
+#include "SimpleKalmanFilter.h"
+
+Servo servo_1;
+Servo servo_2;
+Servo servo_3;
+Servo servo_4;
+Servo servo_5;
+Servo servo_6;
+
+int servoPosition = 0;
+
+volatile int ch1_impulseLength = 0;
+volatile int prev_time0 = 0;
+volatile int ch2_impulseLength = 0;
+volatile int prev_time1 = 0;
+
+SimpleKalmanFilter Filter1(KFILTER_P1, KFILTER_P2, KFILTER_P3);
+SimpleKalmanFilter Filter2(KFILTER_P1, KFILTER_P2, KFILTER_P3);
+
+
+void setup() {
+
+  attachInterrupt (0, ch1_Rising, RISING);
+  attachInterrupt (1, ch2_Rising, RISING);
+
+  servo_1.attach(SERVO_1PIN);
+  servo_2.attach(SERVO_2PIN);
+  servo_3.attach(SERVO_3PIN);
+  servo_4.attach(SERVO_4PIN);
+  servo_5.attach(SERVO_5PIN);
+  servo_6.attach(SERVO_6PIN);
+
+  Serial.begin (9600);
+}
+
+
+void loop() {
+
+  ch1_impulseLength = Filter1.updateEstimate(ch1_impulseLength); //Data filtering
+  ch2_impulseLength = Filter2.updateEstimate(ch2_impulseLength); //Data filtering
+
+  Serial.print(ch1_impulseLength);
+  Serial.print(" | ");
+  Serial.println(ch2_impulseLength);
+
+  servoPosition = map(ch1_impulseLength, MAXCH1_VALUE, MINCH1_VALUE, 0, 180);
+
+  /* Normal Steering */
+  if (ch2_impulseLength >= 1500) {
+
+    servo_1.write(servoPosition + SERVO_1TRIM);
+    servo_2.write(servoPosition + SERVO_2TRIM);
+    servo_3.write(90 + SERVO_3TRIM);
+    servo_4.write(90 + SERVO_4TRIM);
+    servo_5.write(-servoPosition + 180 + SERVO_5TRIM);
+    servo_6.write(-servoPosition + 180 + SERVO_6TRIM);
+  }
+
+  /* Crab Steering */
+  else {
+
+    servo_1.write(servoPosition + SERVO_1TRIM);
+    servo_2.write(servoPosition + SERVO_2TRIM);
+    servo_3.write(servoPosition + SERVO_3TRIM);
+    servo_4.write(servoPosition + SERVO_4TRIM);
+    servo_5.write(servoPosition + SERVO_5TRIM);
+    servo_6.write(servoPosition + SERVO_6TRIM);
+
+  }
+}
+
+void ch1_Rising() {
+  attachInterrupt (0, ch1_Falling, FALLING);
+  prev_time0 = micros();
+}
+
+void ch2_Rising() {
+  attachInterrupt (1, ch2_Falling, FALLING);
+  prev_time1 = micros();
+}
+
+void ch1_Falling() {
+  attachInterrupt (0, ch1_Rising, RISING);
+  ch1_impulseLength = micros() - prev_time0;
+}
+
+void ch2_Falling() {
+  attachInterrupt (1, ch2_Rising, RISING);
+  ch2_impulseLength = micros() - prev_time1;
+}
